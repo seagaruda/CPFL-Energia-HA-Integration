@@ -1,0 +1,57 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "CPFL Energia",
+        "description": "Escolha como fazer login na sua conta CPFL Energia."
+      },
+      "login": {
+        "title": "Login",
+        "description": "Digite suas credenciais da CPFL Energia.",
+        "data": {
+          "document": "CPF ou CNPJ (somente números)",
+          "password": "Senha"
+        }
+      },
+      "select_installation": {
+        "title": "Selecionar Instalação",
+        "description": "Selecione a instalação que deseja monitorar.",
+        "data": {
+          "installation_number": "Instalação"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Falha ao conectar",
+      "invalid_auth": "Credenciais inválidas",
+      "unknown": "Erro inesperado"
+    },
+    "abort": {
+      "no_installation": "Nenhuma instalação encontrada para esta conta.",
+      "all_added": "Todas as instalações já foram adicionadas."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configurações CPFL Energia",
+        "data": {
+          "action": "Ação"
+        }
+      },
+      "add_installation": {
+        "title": "Adicionar Instalação",
+        "description": "Selecione uma instalação para adicionar.",
+        "data": {
+          "installation_number": "Instalação"
+        }
+      },
+      "settings": {
+        "title": "Configurações",
+        "data": {
+          "update_interval": "Intervalo de atualização (segundos)"
+        }
+      }
+    }
+  }
+}

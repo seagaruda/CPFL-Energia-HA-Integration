@@ -1,0 +1,57 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "CPFL Energia",
+        "description": "Choose how to login to your CPFL Energia account."
+      },
+      "login": {
+        "title": "Login",
+        "description": "Enter your CPFL Energia credentials.",
+        "data": {
+          "document": "CPF or CNPJ (numbers only)",
+          "password": "Password"
+        }
+      },
+      "select_installation": {
+        "title": "Select Installation",
+        "description": "Select the installation you want to monitor.",
+        "data": {
+          "installation_number": "Installation"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "invalid_auth": "Invalid credentials",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "no_installation": "No installations found for this account.",
+      "all_added": "All installations have already been added."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "CPFL Energia Settings",
+        "data": {
+          "action": "Action"
+        }
+      },
+      "add_installation": {
+        "title": "Add Installation",
+        "description": "Select an installation to add.",
+        "data": {
+          "installation_number": "Installation"
+        }
+      },
+      "settings": {
+        "title": "Settings",
+        "data": {
+          "update_interval": "Update interval (seconds)"
+        }
+      }
+    }
+  }
+}
