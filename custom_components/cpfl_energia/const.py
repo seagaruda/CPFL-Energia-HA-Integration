@@ -53,17 +53,11 @@ SUFFIX_TARIFF_FLAGS = "tariff_flags"
 # Attributes
 ATTR_KEY_CONSUMPTION_HISTORY = "consumption_history"
 ATTR_KEY_BILL_HISTORY = "bill_history"
-ATTR_KEY_INSTALLATION_INFO = "installation_info"
-
 STATE_UNAVAILABLE = "unavailable"
 STATE_UPDATE_UNCHANGED = "unchanged"
 
 # Settings
 SETTING_UPDATE_TIMEOUT = 60
-# First N days in a month to still fetch last month's data
-SETTING_LAST_MONTH_UPDATE_DAY_THRESHOLD = 5
-# First N days in a year to still fetch last year's data
-SETTING_LAST_YEAR_UPDATE_DAY_THRESHOLD = 10
 
 # Defaults
 DEFAULT_UPDATE_INTERVAL = int(timedelta(hours=4).total_seconds())
