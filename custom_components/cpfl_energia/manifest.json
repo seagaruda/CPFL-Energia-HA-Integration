@@ -3,13 +3,9 @@
   "name": "CPFL Energia",
   "codeowners": ["@seagaruda"],
   "config_flow": true,
-  "dependencies": [],
   "documentation": "https://github.com/seagaruda/CPFL-Energia-HA-Integration",
-  "homekit": {},
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/seagaruda/CPFL-Energia-HA-Integration/issues",
-  "requirements": [],
-  "ssdp": [],
-  "version": "1.0.0",
-  "zeroconf": []
+  "requirements": ["requests>=2.28.0"],
+  "version": "1.0.0"
 }

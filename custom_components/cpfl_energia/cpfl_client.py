@@ -69,6 +69,58 @@ TARIFF_FLAGS = {
 }
 
 
+def _mask_document(document: str | None) -> str:
+    """Mask a CPF/CNPJ for logging, keeping only the last 4 digits."""
+    if not document:
+        return "***"
+    digits = "".join(ch for ch in str(document) if ch.isdigit())
+    if len(digits) <= 4:
+        return "***"
+    return f"***{digits[-4:]}"
+
+
+def _parse_brl(value: Any) -> float:
+    """Parse a number that may be in Brazilian format (1.234,56 -> 1234.56).
+
+    Handles values already numeric, plain-format strings ("1234.56"), and
+    Brazilian-format strings where "." is the thousands separator and "," is
+    the decimal separator. Returns 0.0 for empty or unparsable values.
+    """
+    if value is None or value == "":
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    text = str(value).strip()
+    if not text:
+        return 0.0
+
+    # Strip currency symbols and whitespace, keep only digits, separators, sign.
+    text = re.sub(r"[^\d.,\-]", "", text)
+    if not text:
+        return 0.0
+
+    has_comma = "," in text
+    has_dot = "." in text
+    if has_comma and has_dot:
+        # Both present: the rightmost separator is the decimal separator.
+        if text.rfind(",") > text.rfind("."):
+            # Brazilian format: "." thousands, "," decimal
+            text = text.replace(".", "").replace(",", ".")
+        else:
+            # US format: "," thousands, "." decimal
+            text = text.replace(",", "")
+    elif has_comma:
+        # Only comma present: treat as decimal separator
+        text = text.replace(",", ".")
+    # Only dot (or neither): already a valid float form
+
+    try:
+        return float(text)
+    except ValueError:
+        return 0.0
+
+
 class CPFLError(Exception):
     """Generic CPFL API error."""
 
@@ -181,6 +233,22 @@ class CPFLClient:
         session = self._get_session()
         session.headers.update({"Authorization": f"Bearer {token}"})
 
+    def close(self) -> None:
+        """Close the underlying HTTP session to avoid connection leaks."""
+        if self._session is not None:
+            try:
+                self._session.close()
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.debug("Error closing CPFL session", exc_info=True)
+            finally:
+                self._session = None
+
+    def __enter__(self) -> "CPFLClient":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
+
     @staticmethod
     def load(saved_data: dict) -> "CPFLClient":
         """Create a client from saved config data."""
@@ -273,21 +341,33 @@ class CPFLClient:
             raise CPFLError(f"Login succeeded but no token in response: {data}")
 
         self.set_authentication(token)
-        _LOGGER.info("CPFL login successful for document %s", self._document)
+        _LOGGER.info(
+            "CPFL login successful for document %s",
+            _mask_document(self._document),
+        )
         return token
 
     def verify_login(self) -> bool:
-        """Check if the current session is still valid."""
+        """Check if the current session is still valid.
+
+        Returns False only for genuine authentication failures (expired token
+        or missing/invalid session). Temporary problems such as network errors
+        or server-side (5xx) failures are re-raised so the caller can retry
+        instead of mistaking them for an expired login.
+        """
         if not self._token:
             return False
         try:
             self._request("GET", PATH_VALIDATE_TOKEN)
             return True
-        except (CPFLAuthExpired, NotLoggedIn):
+        except (CPFLAuthExpired, NotLoggedIn, InvalidCredentials):
+            # Genuine authentication failure — session is no longer valid.
             return False
-        except CPFLError:
-            # Other errors may not mean session is invalid
-            return False
+        except CPFLHTTPError:
+            # status_code == 0 means a network/connection error; any other
+            # code here is a non-auth HTTP failure (e.g. 5xx). Both are
+            # transient and must not be reported as an expired login.
+            raise
 
     # -- Installation data ---------------------------------------------------
 
@@ -347,8 +427,8 @@ class CPFLClient:
             for entry in monthly_list:
                 if not isinstance(entry, dict):
                     continue
-                kwh = float(entry.get(KEY_CONSUMO, entry.get(KEY_KWH, 0)) or 0)
-                amount = float(entry.get(KEY_VALOR, 0) or 0)
+                kwh = _parse_brl(entry.get(KEY_CONSUMO, entry.get(KEY_KWH, 0)))
+                amount = _parse_brl(entry.get(KEY_VALOR, 0))
                 entries.append({
                     "month": entry.get("mes", entry.get(KEY_REFERENCIA, "")),
                     "kwh": kwh,
@@ -404,9 +484,9 @@ class CPFLClient:
                     CPFLBill(
                         reference_month=item.get("mesReferencia", item.get(KEY_REFERENCIA, "")),
                         due_date=item.get("dataVencimento", item.get(KEY_VENCIMENTO, "")),
-                        amount=float(item.get(KEY_VALOR, 0) or 0),
-                        consumption_kwh=float(
-                            item.get(KEY_CONSUMO, item.get(KEY_KWH, 0)) or 0
+                        amount=_parse_brl(item.get(KEY_VALOR, 0)),
+                        consumption_kwh=_parse_brl(
+                            item.get(KEY_CONSUMO, item.get(KEY_KWH, 0))
                         ),
                         status=item.get("situacao", item.get("status", "")),
                     )
@@ -451,9 +531,9 @@ class CPFLClient:
                     CPFLBill(
                         reference_month=item.get("mesReferencia", item.get(KEY_REFERENCIA, "")),
                         due_date=item.get("dataVencimento", item.get(KEY_VENCIMENTO, "")),
-                        amount=float(item.get(KEY_VALOR, 0) or 0),
-                        consumption_kwh=float(
-                            item.get(KEY_CONSUMO, item.get(KEY_KWH, 0)) or 0
+                        amount=_parse_brl(item.get(KEY_VALOR, 0)),
+                        consumption_kwh=_parse_brl(
+                            item.get(KEY_CONSUMO, item.get(KEY_KWH, 0))
                         ),
                         status="paga",
                     )
@@ -468,8 +548,5 @@ class CPFLClient:
         if isinstance(info, dict):
             # CPFL may return balance in various fields
             balance = info.get("saldo", info.get("debito", 0))
-            try:
-                return float(balance or 0)
-            except (TypeError, ValueError):
-                return 0.0
+            return _parse_brl(balance)
         return 0.0

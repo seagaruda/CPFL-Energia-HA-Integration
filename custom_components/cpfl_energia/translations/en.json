@@ -19,6 +19,10 @@
         "data": {
           "installation_number": "Installation"
         }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate",
+        "description": "Your CPFL Energia session has expired. Confirm to sign in again and restore access."
       }
     },
     "error": {
@@ -28,7 +32,8 @@
     },
     "abort": {
       "no_installation": "No installations found for this account.",
-      "all_added": "All installations have already been added."
+      "all_added": "All installations have already been added.",
+      "reauth_successful": "Reauthentication was successful."
     }
   },
   "options": {

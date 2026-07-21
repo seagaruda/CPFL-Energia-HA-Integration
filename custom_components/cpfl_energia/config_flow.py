@@ -67,7 +67,7 @@ class CPFLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
         """Create the options flow."""
-        return CPFLOptionsFlowHandler(config_entry)
+        return CPFLOptionsFlowHandler()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -80,7 +80,6 @@ class CPFLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle login with document and password."""
         errors: dict[str, str] = {}
-        error_detail = ""
 
         if user_input is not None:
             document = user_input[CONF_DOCUMENT]
@@ -88,40 +87,46 @@ class CPFLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             client = CPFLClient()
             try:
-                token = await self.hass.async_add_executor_job(
-                    client.login, document, password
-                )
-            except InvalidCredentials:
-                errors[CONF_GENERAL_ERROR] = ERROR_INVALID_AUTH
-            except CPFLError:
-                errors[CONF_GENERAL_ERROR] = ERROR_CANNOT_CONNECT
-            except RequestException:
-                errors[CONF_GENERAL_ERROR] = ERROR_CANNOT_CONNECT
-            except Exception as ge:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception during CPFL login")
-                errors[CONF_GENERAL_ERROR] = ERROR_UNKNOWN
-                error_detail = str(ge)
-            else:
-                # Login succeeded — fetch installations
                 try:
-                    installations = await self.hass.async_add_executor_job(
-                        client.get_installations
+                    token = await self.hass.async_add_executor_job(
+                        client.login, document, password
                     )
-                except Exception as ge:  # pylint: disable=broad-except
-                    _LOGGER.exception("Error fetching installations")
+                except InvalidCredentials:
+                    errors[CONF_GENERAL_ERROR] = ERROR_INVALID_AUTH
+                except (CPFLError, RequestException):
+                    errors[CONF_GENERAL_ERROR] = ERROR_CANNOT_CONNECT
+                except Exception:  # pylint: disable=broad-except
+                    # Log the raw exception (with traceback) at debug level
+                    # only; never surface it to the UI.
+                    _LOGGER.debug(
+                        "Unexpected exception during CPFL login", exc_info=True
+                    )
                     errors[CONF_GENERAL_ERROR] = ERROR_UNKNOWN
-                    error_detail = str(ge)
                 else:
-                    if not installations:
-                        return self.async_abort(reason=ABORT_NO_INSTALLATION)
+                    # Login succeeded — fetch installations
+                    try:
+                        installations = await self.hass.async_add_executor_job(
+                            client.get_installations
+                        )
+                    except Exception:  # pylint: disable=broad-except
+                        _LOGGER.debug(
+                            "Error fetching installations", exc_info=True
+                        )
+                        errors[CONF_GENERAL_ERROR] = ERROR_UNKNOWN
+                    else:
+                        if not installations:
+                            return self.async_abort(
+                                reason=ABORT_NO_INSTALLATION
+                            )
 
-                    # Store for the next step
-                    self.context["installations"] = installations
-                    self.context["auth_token"] = token
-                    self.context["document"] = document
-                    self.context["password"] = password
+                        # Store for the next step
+                        self.context["installations"] = installations
+                        self.context["auth_token"] = token
+                        self.context["document"] = document
 
-                    return await self.async_step_select_installation()
+                        return await self.async_step_select_installation()
+            finally:
+                await self.hass.async_add_executor_job(client.close)
 
         schema = vol.Schema(
             {
@@ -134,7 +139,6 @@ class CPFLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id=STEP_LOGIN,
             data_schema=schema,
             errors=errors,
-            description_placeholders={"error_detail": error_detail},
         )
 
     async def async_step_select_installation(
@@ -243,10 +247,6 @@ class CPFLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class CPFLOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle options flow for CPFL Energia."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
-
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
@@ -283,7 +283,7 @@ class CPFLOptionsFlowHandler(config_entries.OptionsFlow):
             inst_num = user_input[CONF_INSTALLATION_NUMBER]
             for inst in self.context.get("available_installations", []):
                 if inst.installation_number == inst_num:
-                    new_data = self.config_entry.data.copy()
+                    new_data = copy.deepcopy(dict(self.config_entry.data))
                     new_data[CONF_INSTALLATIONS][inst_num] = inst.dump()
                     new_data[CONF_UPDATED_AT] = str(int(time.time() * 1000))
                     self.hass.config_entries.async_update_entry(
@@ -299,13 +299,16 @@ class CPFLOptionsFlowHandler(config_entries.OptionsFlow):
         client = CPFLClient.load(
             {CONF_AUTH_TOKEN: self.config_entry.data[CONF_AUTH_TOKEN]}
         )
-        if not await self.hass.async_add_executor_job(client.verify_login):
-            from homeassistant.exceptions import ConfigEntryAuthFailed
-            raise ConfigEntryAuthFailed("Login expired")
+        try:
+            if not await self.hass.async_add_executor_job(client.verify_login):
+                from homeassistant.exceptions import ConfigEntryAuthFailed
+                raise ConfigEntryAuthFailed("Login expired")
 
-        installations = await self.hass.async_add_executor_job(
-            client.get_installations
-        )
+            installations = await self.hass.async_add_executor_job(
+                client.get_installations
+            )
+        finally:
+            await self.hass.async_add_executor_job(client.close)
         if not installations:
             return self.async_abort(reason=ABORT_NO_INSTALLATION)
 
@@ -342,7 +345,7 @@ class CPFLOptionsFlowHandler(config_entries.OptionsFlow):
             }
         )
         if user_input:
-            new_data = self.config_entry.data.copy()
+            new_data = copy.deepcopy(dict(self.config_entry.data))
             new_data[CONF_SETTINGS][CONF_UPDATE_INTERVAL] = user_input[
                 CONF_UPDATE_INTERVAL
             ]

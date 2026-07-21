@@ -17,6 +17,7 @@ CONF_UPDATED_AT = "updated_at"
 CONF_ACTION = "action"
 
 STEP_USER = "user"
+STEP_INIT = "init"
 STEP_LOGIN = "login"
 STEP_SELECT_INSTALLATION = "select_installation"
 STEP_SETTINGS = "settings"
@@ -65,4 +66,4 @@ SETTING_LAST_MONTH_UPDATE_DAY_THRESHOLD = 5
 SETTING_LAST_YEAR_UPDATE_DAY_THRESHOLD = 10
 
 # Defaults
-DEFAULT_UPDATE_INTERVAL = timedelta(hours=4).seconds
+DEFAULT_UPDATE_INTERVAL = int(timedelta(hours=4).total_seconds())

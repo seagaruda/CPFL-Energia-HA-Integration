@@ -2,6 +2,7 @@
 """The CPFL Energia integration."""
 from __future__ import annotations
 
+import copy
 import logging
 import time
 
@@ -32,8 +33,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     client = CPFLClient.load(
         {CONF_AUTH_TOKEN: entry.data[CONF_AUTH_TOKEN]}
     )
-    if not await hass.async_add_executor_job(client.verify_login):
-        raise ConfigEntryAuthFailed("Login expired")
+    try:
+        if not await hass.async_add_executor_job(client.verify_login):
+            raise ConfigEntryAuthFailed("Login expired")
+    finally:
+        await hass.async_add_executor_job(client.close)
 
     hass.data[DOMAIN][entry.entry_id] = {}
 
@@ -70,7 +74,7 @@ async def async_remove_config_entry_device(
         entity_reg.async_remove(entity_id)
 
     # Update config entry
-    new_data = config_entry.data.copy()
+    new_data = copy.deepcopy(dict(config_entry.data))
     new_data[CONF_INSTALLATIONS].pop(installation_num, None)
     new_data[CONF_UPDATED_AT] = str(int(time.time() * 1000))
     hass.config_entries.async_update_entry(config_entry, data=new_data)

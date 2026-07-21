@@ -32,18 +32,13 @@ from homeassistant.helpers.update_coordinator import (
 from .const import (
     ATTR_KEY_BILL_HISTORY,
     ATTR_KEY_CONSUMPTION_HISTORY,
-    ATTR_KEY_INSTALLATION_INFO,
     CONF_AUTH_TOKEN,
     CONF_DOCUMENT,
     CONF_INSTALLATIONS,
     CONF_SETTINGS,
     CONF_UPDATE_INTERVAL,
-    DATA_KEY_LAST_UPDATE_DAY,
     DOMAIN,
-    SETTING_LAST_MONTH_UPDATE_DAY_THRESHOLD,
-    SETTING_LAST_YEAR_UPDATE_DAY_THRESHOLD,
     SETTING_UPDATE_TIMEOUT,
-    STATE_UPDATE_UNCHANGED,
     SUFFIX_BALANCE,
     SUFFIX_BILL_AMOUNT,
     SUFFIX_BILL_DUE_DATE,
@@ -70,6 +65,16 @@ from .cpfl_client import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _mask_document(document: str | None) -> str:
+    """Mask a CPF/CNPJ for logging, keeping only the last 4 digits."""
+    if not document:
+        return "***"
+    digits = "".join(ch for ch in str(document) if ch.isdigit())
+    if len(digits) <= 4:
+        return "***"
+    return f"***{digits[-4:]}"
 
 
 async def async_setup_entry(
@@ -141,9 +146,7 @@ class CPFLBaseSensor(CoordinatorEntity, SensorEntity):
         entity_suffix: str,
         extra_state_attributes_key: str | None = None,
     ) -> None:
-        SensorEntity.__init__(self)
-        CoordinatorEntity.__init__(self, coordinator)
-        self._coordinator = coordinator
+        super().__init__(coordinator)
         self._installation_number = installation_number
         self._entity_suffix = entity_suffix
         self._attr_extra_state_attributes = {}
@@ -173,13 +176,13 @@ class CPFLBaseSensor(CoordinatorEntity, SensorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        if not self._coordinator.data:
+        if not self.coordinator.data:
             _LOGGER.error("%s coordinator has no data", self.unique_id)
             self._attr_available = False
             self.async_write_ha_state()
             return
 
-        inst_data = self._coordinator.data.get(self._installation_number)
+        inst_data = self.coordinator.data.get(self._installation_number)
         if inst_data is None:
             _LOGGER.warning("%s not found in coordinator data", self.unique_id)
             self._attr_available = False
@@ -199,10 +202,6 @@ class CPFLBaseSensor(CoordinatorEntity, SensorEntity):
 
         # Value is available
         self._attr_available = True
-
-        if new_value == STATE_UPDATE_UNCHANGED:
-            _LOGGER.debug("%s no update needed, skip", self.unique_id)
-            return
 
         self._attr_native_value = new_value
 
@@ -277,6 +276,10 @@ class CPFLCoordinator(DataUpdateCoordinator):
     async def _async_refresh_client(self):
         """Refresh the API client."""
         _LOGGER.debug("Refreshing CPFL client")
+        # Close any previous client to avoid leaking its HTTP connection pool.
+        if self._client is not None:
+            await self.hass.async_add_executor_job(self._client.close)
+            self._client = None
         self._client = await self.hass.async_add_executor_job(
             CPFLClient.load,
             {CONF_AUTH_TOKEN: self._config[CONF_AUTH_TOKEN]},
@@ -286,11 +289,13 @@ class CPFLCoordinator(DataUpdateCoordinator):
         )
         if not logged_in:
             _LOGGER.warning(
-                "%s: Login expired", self._config.get(CONF_DOCUMENT, "")
+                "%s: Login expired",
+                _mask_document(self._config.get(CONF_DOCUMENT, "")),
             )
             raise ConfigEntryAuthFailed("Login expired")
         _LOGGER.debug(
-            "%s: Session still valid", self._config.get(CONF_DOCUMENT, "")
+            "%s: Session still valid",
+            _mask_document(self._config.get(CONF_DOCUMENT, "")),
         )
 
     async def _async_fetch(self, func, *args, **kwargs) -> tuple[bool, Any]:
